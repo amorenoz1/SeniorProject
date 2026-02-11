@@ -58,7 +58,7 @@ def process_event(tree, event_number, adc_max):
 	ax.set_xlabel("Time Bin")
 	ax.set_ylabel("Strip")
 	ax.set_zlabel("ADC")
-	ax.set_title("Tracker 0")
+	ax.set_title("Tracker 0-3")
 
 	# Places the figure in the pdf
 	with PdfPages(output_file) as pdf:
