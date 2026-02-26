@@ -1,5 +1,5 @@
 #ignore
 
-./.venv/
+./.venv/*
 .envrc
-./RootFiles/
+RootFiles/*
