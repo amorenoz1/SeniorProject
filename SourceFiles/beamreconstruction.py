@@ -1,69 +1,58 @@
 import uproot
-import awkward as ak
 import numpy as np
 import matplotlib.pyplot as plt
 
+class Event:
+    def __init__(self, Id):
+        self.detector_0_x = []
+        self.detector_0_y = []
+        self.detector_1_x = []
+        self.detector_1_y = []
+        self.detector_2_x = []
+        self.detector_2_y = []
+        self.detector_3_x = []
+        self.detector_3_y = []
+        self.id = Id
 
-N_TIMEBINS = 12
-N_STRIPS = 128
+    def preprocess(self, strips, adcs, detector_ids, planes, adc_threshold):
 
-def filter_events(data, adc_branches, threshold):
-    good_events = []
-    for event in range(len(data["evtID"])):
-        n = len(data["strip"][event])
-        adcs = [data[adc][event] for adc in adc_branches]
+        for i in range(len(strips)):
+            if np.sum([adcs[j][i] for j in range(len(adcs))]) <= len(adcs) * adc_threshold:
+                continue
 
-        above_threshold = False
-        for i in range(n):
-            strip_adcs_sum = sum([int(adcs[x][i]) for x in range(12)])
-            if strip_adcs_sum >= threshold:
-                above_threshold |= True
+            data = (strips[i], [adcs[j][i] for j in range(len(adcs))])
 
-        if above_threshold:
-            good_events.append(event)
+            match  detector_ids[i]:
+                case 0:
+                    if planes[i] == 0:
+                        self.detector_0_x.append(data)
+                    else:
+                        self.detector_0_y.append(data)
+                case 1:
+                    if planes[i] == 0:
+                        self.detector_1_x.append(data)
+                    else:
+                        self.detector_1_y.append(data)
+                case 2:
+                    if planes[i] == 0:
+                        self.detector_2_x.append(data)
+                    else:
+                        self.detector_2_y.append(data)
+                case 3:
+                    if planes[i] == 0:
+                        self.detector_3_x.append(data)
+                    else:
+                        self.detector_3_y.append(data)
 
-    return good_events
-
-def plot_detector_3d_hist(detectors, det_id, plane_id):
-    """
-    plane_id: 0 = X, 1 = Y
-    """
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
-
-    dx = 0.7   # timebin width
-    dy = 0.7  # strip width
-
-    for strip, plane, adcs in detectors[det_id]:
-        if plane != plane_id:
-            continue
-
-        for timebin in range(N_TIMEBINS):
-            x = timebin
-            y = strip
-            z = 0                  # bars start at ADC = 0
-            dz = adcs[timebin]     # ADC is now the height (Z)
-
-            if dz > 0:
-                ax.bar3d(x, y, z, dx, dy, dz)   # ← single uniform color
-
-    # Explicit detector geometry
-    ax.set_xlim(0, N_TIMEBINS)
-    ax.set_ylim(0, N_STRIPS)
-
-    ax.set_xlabel("Time Bin")
-    ax.set_ylabel("Strip")
-    ax.set_zlabel("ADC")
-
-    plane_name = "X" if plane_id == 0 else "Y"
-    ax.set_title(f"Detector {det_id} – Plane {plane_name} (3D Histogram)")
-
-    plt.tight_layout()
-    plt.show()
+    def empty(self):
+        return (len(self.detector_0_x) + len(self.detector_0_y)
+             + len(self.detector_1_x) + len(self.detector_1_y)
+             + len(self.detector_2_x) + len(self.detector_2_y)
+             + len(self.detector_3_x) + len(self.detector_3_y)
+             <= 0)
 
 
-def beam_reconstruction(root_file_path):
+def preprocessing(root_file_path, threshold):
     file = uproot.open(root_file_path)
 
     tree = file["THit"]
@@ -74,24 +63,105 @@ def beam_reconstruction(root_file_path):
 
     data = tree.arrays(branches, library="np")
 
-    good_events = filter_events(data, adc_branches, threshold=1000 * 12)
-    print(good_events)
+    good_events = []
+
+    n = len(data["evtID"])
+
+    for event_id in range(n):
+        if event_id % 100 == 0:
+            print(f"preprocessing event batch: {event_id}/{n}")
+
+        e = Event(event_id)
+
+        strips = data["strip"][e.id]
+        detids = data["detID"][e.id]
+        planes = data["planeID"][e.id]
+        adcs = [data[adc][e.id] for adc in adc_branches]
+
+        e.preprocess(strips,adcs,detids,planes,threshold)
+
+        if e.empty():
+            continue
+
+        good_events.append(e)
+
+    return good_events
+
+
+def get_hits(detector_x, detector_y):
+    hit_ordered_pairs = []
+
+    for hit_x in detector_x:
+        max_similarity = -np.inf
+        best_pair = None
+
+        for hit_y in detector_y:
+            similarity = np.dot(hit_x[1], hit_y[1])
+            print(similarity)
+            if similarity > max_similarity:
+                max_similarity = similarity
+                best_pair = (hit_x, hit_y)
+
+        hit_ordered_pairs.append(best_pair)
+
+    return hit_ordered_pairs
+
+def get_center_of_mass(adcs):
+    weighted_sum = 0
+    total_mass = 0
+
+    for adc, l in enumerate(adcs):
+        weighted_sum += adc * l
+        total_mass += adc
+
+    return weighted_sum/total_mass
+
+def get_hit_adc(adcs_x, adcs_y):
+    return np.max(adcs_x + adcs_y)
+
+def beam_reconstruction(root_file_path, threshold, detector):
+
+    beam_reconstruction_grid = np.zeros((128, 128))
+
+    good_events = preprocessing(root_file_path, threshold)
+
+    print(len(good_events))
 
     for event in good_events:
-        strips = data["strip"][event]
-        detids = data["detID"][event]
-        planes = data["planeID"][event]
-        adcs = [data[adc][event] for adc in adc_branches]
+        hits = []
+        match detector:
+            case 0:
+                hits = get_hits(event.detector_0_x, event.detector_0_y)
+
+            case 1:
+                hits = get_hits(event.detector_1_x, event.detector_1_y)
+
+            case 2:
+                hits = get_hits(event.detector_2_x, event.detector_2_y)
+
+            case 3:
+                hits = get_hits(event.detector_3_x, event.detector_3_y)
+
+        for hit in hits:
+            if hit is not None:
+                beam_reconstruction_grid[hit[0][0], hit[1][0]] += get_hit_adc(hit[0][1], hit[1][1])
+
+    return beam_reconstruction_grid
+
+grid = beam_reconstruction("RootFiles/nov8.root", 50, 3)
+
+ticks = np.arange(0, 129, 16)
 
 
-        detectors = [[] for _ in range(6)]
-        n = len(strips)
+plt.imshow(grid, cmap='viridis', origin="lower")  # nicer color map
+plt.colorbar()
+plt.xticks(ticks)
+plt.yticks(ticks)
+plt.title("Detector 1")
+plt.show()
 
-        for i in range(n):
-            detectors[detids[i]].append((strips[i], planes[i], [int(adcs[x][i]) for x in range(12)]))
 
-        plot_detector_3d_hist(detectors, 0, 0)
-        plot_detector_3d_hist(detectors, 0, 1)
+
 
         
 
