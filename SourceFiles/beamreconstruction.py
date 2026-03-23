@@ -1,6 +1,9 @@
 import uproot
 import numpy as np
 import matplotlib.pyplot as plt
+from time import time 
+
+from threading import Thread, Semaphore
 
 class Event:
     def __init__(self, Id):
@@ -51,26 +54,10 @@ class Event:
              + len(self.detector_3_x) + len(self.detector_3_y)
              <= 0)
 
-
-def preprocessing(root_file_path, threshold):
-    file = uproot.open(root_file_path)
-
-    tree = file["THit"]
-
+def preprocessing_batch(data, event_range, good_events, threshold, good_events_mutex,):
     adc_branches = [f"adc{i}" for i in range(12)]
 
-    branches = ["evtID", "strip", "detID", "planeID"] + adc_branches
-
-    data = tree.arrays(branches, library="np")
-
-    good_events = []
-
-    n = len(data["evtID"])
-
-    for event_id in range(n):
-        if event_id % 100 == 0:
-            print(f"preprocessing event batch: {event_id}/{n}")
-
+    for event_id in range(event_range[0], event_range[1]):
         e = Event(event_id)
 
         strips = data["strip"][e.id]
@@ -83,7 +70,45 @@ def preprocessing(root_file_path, threshold):
         if e.empty():
             continue
 
+        good_events_mutex.acquire()
         good_events.append(e)
+        good_events_mutex.release()
+
+
+
+
+def preprocessing(root_file_path, threshold):
+    file = uproot.open(root_file_path)
+    tree = file["THit"]
+    adc_branches = [f"adc{i}" for i in range(12)]
+    branches = ["evtID", "strip", "detID", "planeID"] + adc_branches
+    data = tree.arrays(branches, library="np")
+
+    good_events = []
+    
+    n = len(data["evtID"])
+    batch_size = 1500
+
+    for k in range(0, n//batch_size, 4):
+        mutex = Semaphore()
+
+        threads = []
+
+        for i in range(k, k + 4):
+            start = i * batch_size
+            end = min(start + batch_size - 1, n)
+
+            print(f"processing event batch: ({start}, {end})")
+
+            t = Thread(target=preprocessing_batch, args=(data, (start, end), good_events, threshold, mutex))
+            t.start()
+            threads.append(t)
+
+            if end == n:
+                break
+
+        for t in threads:
+            t.join()
 
     return good_events
 
@@ -97,7 +122,6 @@ def get_hits(detector_x, detector_y):
 
         for hit_y in detector_y:
             similarity = np.dot(hit_x[1], hit_y[1])
-            print(similarity)
             if similarity > max_similarity:
                 max_similarity = similarity
                 best_pair = (hit_x, hit_y)
@@ -110,22 +134,22 @@ def get_center_of_mass(adcs):
     weighted_sum = 0
     total_mass = 0
 
-    for adc, l in enumerate(adcs):
-        weighted_sum += adc * l
+    for l, adc in enumerate(adcs):
+        weighted_sum += adc * (l + 1)
         total_mass += adc
 
-    return weighted_sum/total_mass
+    return int(np.round(weighted_sum/total_mass)) - 1
 
 def get_hit_adc(adcs_x, adcs_y):
-    return np.max(adcs_x + adcs_y)
+    x_i = get_center_of_mass(adcs_x)
+    y_i = get_center_of_mass(adcs_y)
+    return np.max(adcs_x[x_i] + adcs_y[y_i])
 
 def beam_reconstruction(root_file_path, threshold, detector):
 
     beam_reconstruction_grid = np.zeros((128, 128))
 
     good_events = preprocessing(root_file_path, threshold)
-
-    print(len(good_events))
 
     for event in good_events:
         hits = []
@@ -144,24 +168,25 @@ def beam_reconstruction(root_file_path, threshold, detector):
 
         for hit in hits:
             if hit is not None:
-                beam_reconstruction_grid[hit[0][0], hit[1][0]] += get_hit_adc(hit[0][1], hit[1][1])
+                beam_reconstruction_grid[127 - hit[0][0], hit[1][0]] += get_hit_adc(hit[0][1], hit[1][1])
 
     return beam_reconstruction_grid
 
-grid = beam_reconstruction("RootFiles/nov8.root", 50, 3)
+def plot_beam_reconstruction(grid, plot_name):
+    ticks = np.arange(0, 129, 16)
+    plt.imshow(grid, cmap='viridis', origin="lower")  # nicer color map
+    plt.colorbar()
+    plt.xticks(ticks)
+    plt.yticks(ticks)
+    plt.title(plot_name)
+    plt.show()
 
-ticks = np.arange(0, 129, 16)
+start_t = time()
+grid = beam_reconstruction("RootFiles/nov8.root", 200, 0)
+end_t = time()
 
+print(f"time: {end_t - start_t}")
 
-plt.imshow(grid, cmap='viridis', origin="lower")  # nicer color map
-plt.colorbar()
-plt.xticks(ticks)
-plt.yticks(ticks)
-plt.title("Detector 1")
-plt.show()
-
-
-
-
+plot_beam_reconstruction(grid, "detector 0 mt")
         
 
