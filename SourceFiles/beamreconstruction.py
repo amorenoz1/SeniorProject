@@ -182,11 +182,11 @@ def plot_beam_reconstruction(grid, plot_name):
     plt.show()
 
 start_t = time()
-grid = beam_reconstruction("RootFiles/nov8.root", 100, 0)
+grid = beam_reconstruction("RootFiles/nov8.root", 100, 2)
 end_t = time()
 
 print(f"time: {end_t - start_t}")
 
-plot_beam_reconstruction(grid, "detector 0 mt")
+plot_beam_reconstruction(grid, "detector 2 adc threshold 100")
         
 
