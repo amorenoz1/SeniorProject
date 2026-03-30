@@ -6,7 +6,7 @@ from time import time
 from threading import Thread, Semaphore
 
 class Event:
-    def __init__(self, Id):
+    def __init__(self, ident):
         self.detector_0_x = []
         self.detector_0_y = []
         self.detector_1_x = []
@@ -15,7 +15,7 @@ class Event:
         self.detector_2_y = []
         self.detector_3_x = []
         self.detector_3_y = []
-        self.id = Id
+        self.id = ident
 
     def preprocess(self, strips, adcs, detector_ids, planes, adc_threshold):
 
@@ -55,7 +55,7 @@ class Event:
              <= 0)
 
 def preprocessing_batch(data, event_range, good_events, threshold, good_events_mutex,):
-    adc_branches = [f"adc{i}" for i in range(12)]
+    adc_branches = [f"adc{i}" for i in range(15)]
 
     for event_id in range(event_range[0], event_range[1]):
         e = Event(event_id)
@@ -80,14 +80,14 @@ def preprocessing_batch(data, event_range, good_events, threshold, good_events_m
 def preprocessing(root_file_path, threshold):
     file = uproot.open(root_file_path)
     tree = file["THit"]
-    adc_branches = [f"adc{i}" for i in range(12)]
+    adc_branches = [f"adc{i}" for i in range(15)]
     branches = ["evtID", "strip", "detID", "planeID"] + adc_branches
     data = tree.arrays(branches, library="np")
 
     good_events = []
     
     n = len(data["evtID"])
-    batch_size = 1500
+    batch_size = 500
 
     for k in range(0, n//batch_size, 4):
         mutex = Semaphore()
@@ -182,7 +182,7 @@ def plot_beam_reconstruction(grid, plot_name):
     plt.show()
 
 start_t = time()
-grid = beam_reconstruction("RootFiles/nov8.root", 200, 0)
+grid = beam_reconstruction("RootFiles/nov8.root", 100, 0)
 end_t = time()
 
 print(f"time: {end_t - start_t}")
