@@ -193,7 +193,7 @@ def plot_hits(grid_x, grid_y, plot_name):
 
 detector = int(sys.argv[1])
 threshold = int(sys.argv[2])
-root_file = "output20250506atnov8_dataTree01.root"
+root_file = "RootFiles/nov8.root"
 '''
         The nov 8 detector 4 data has hits in the range 0-127
         (chips 8). Detector 5 has not been investigated.
