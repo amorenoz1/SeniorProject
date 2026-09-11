@@ -23,13 +23,6 @@ def main():
 
     event_amount = len(df["evtID"])
 
-    min_strip = 0
-    max_strip = 0
-    # max_average_adc = 0
-    strip_set_plane_1: set[int] = set()
-    strip_set_plane_0: set[int] = set()
-    plane_0 = 0
-    plane_1 = 0
     for i in range(event_amount):
         adcs =  [df[adc][i] for adc in adc_branches]
         strips = df["strip"][i]

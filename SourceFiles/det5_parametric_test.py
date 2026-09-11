@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 
-LOWER_BOUND_THRESHOLD = 0
+LOWER_BOUND_THRESHOLD = 1500
 APV_OFFSET = 128
 GRID = 768
 UP_RIGHT = np.array([1, 1])
@@ -51,10 +51,10 @@ def get_global_mapped(strip):
 
 def get_direction(strip, global_map):
     apv = get_apv(strip)
-    if apv < 4 and global_map % 2 == 0: return UP_RIGHT
-    if apv < 4 and global_map % 2 != 0: return DOWN_RIGHT
-    if apv >= 4 and global_map % 2 == 0: return UP_LEFT
-    if apv >= 4 and global_map % 2 != 0: return DOWN_LEFT
+    if apv < 4 and global_map % 4 == 0: return UP_RIGHT
+    if apv < 4 and global_map % 4 != 0 : return DOWN_RIGHT
+    if apv >= 4 and global_map % 4 == 0: return UP_LEFT
+    if apv >= 4 and global_map % 4 != 0: return DOWN_LEFT
     return np.array([0 , 0])
 
 def get_x(strip):
@@ -98,7 +98,7 @@ def get_local_mapped(n, apv):
             else:
                 return odd_func_apv12(n)
 
-    return 0
+    return n
 
 
 def collect_valid_strips(adcs, strips, det_ids, planes):
@@ -112,6 +112,7 @@ def collect_valid_strips(adcs, strips, det_ids, planes):
     lo = LOWER_BOUND_THRESHOLD
 
     valid = []
+    apv_from_strips = [get_apv(i) for i in strips]
     for x in range(len(det_ids)):
         if det_ids[x] != 5:
             continue
@@ -143,8 +144,6 @@ def accumulate_hits(valid, counts, total):
     # ordered pairs (i != k) are kept so the counts match the original script;
     # switching to `for k in range(i + 1, len(valid))` gives the same picture
     # at half the weight and half the work.
-    heap = []
-    counter = 0
     for i in range(len(valid)):
         _, xa, ya, direction_a, peak_a = valid[i]
         for k in range(len(valid)):
@@ -170,19 +169,12 @@ def accumulate_hits(valid, counts, total):
             if l1[0] < 0 or l1[0] >= 384 or l1[1] < 0 or l1[1] >= 384:
                 continue
 
-            similarity_score = np.dot(np.linalg.norm(peak_a), np.linalg.norm(peak_b))
             adc = max(peak_a[get_center_of_mass(peak_a)], peak_b[get_center_of_mass(peak_b)])
-            heapq.heappush(heap,(-similarity_score, counter, (l1, adc)))
-            counter += 1
             
-
-    if (len(heap) <= 0): 
-        return
+            x, y = int(l1[0] * 2), int(l1[1] * 2)
+            counts[y, x] += 1
+            total[y, x] += adc
     
-    similarity_score, i, best_match = heap[0]
-    x, y = int(best_match[0][0] * 2), int(best_match[0][1] * 2)
-    counts[y, x] += 1
-    total[y, x] += best_match[1]
 
 
 def main():
@@ -224,7 +216,7 @@ def main():
     cmap = plt.get_cmap('viridis').copy()
     cmap.set_bad('#1a1a1a')
 
-    vmax = np.percentile(total[counts > 0], 98)
+    vmax = np.percentile(total[counts > 0], 97)
     plt.imshow(view, cmap=cmap, vmin=0, vmax=vmax,
                origin='lower', aspect='equal', interpolation='nearest')
     plt.colorbar(label='Accumulated ADC', extend='max')
