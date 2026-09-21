@@ -4,7 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 
-LOWER_BOUND_THRESHOLD = 1500
+from itertools import combinations
+
+LOWER_BOUND_THRESHOLD = 0
 APV_OFFSET = 128
 GRID = 768
 UP_RIGHT = np.array([1, 1])
@@ -51,10 +53,26 @@ def get_global_mapped(strip):
 
 def get_direction(strip, global_map):
     apv = get_apv(strip)
-    if apv < 4 and global_map % 4 == 0: return UP_RIGHT
-    if apv < 4 and global_map % 4 != 0 : return DOWN_RIGHT
-    if apv >= 4 and global_map % 4 == 0: return UP_LEFT
-    if apv >= 4 and global_map % 4 != 0: return DOWN_LEFT
+    match apv:
+        case 0:
+            if global_map % 2 == 0: return DOWN_RIGHT
+            else: return UP_RIGHT
+        case 1:
+            if global_map % 2 == 0: return DOWN_RIGHT
+            else: return UP_RIGHT
+        case 2:
+            if global_map % 2 == 0: return DOWN_RIGHT
+            else: return UP_RIGHT
+        case 4:
+            if global_map % 2 == 0: return UP_LEFT
+            else: return DOWN_LEFT
+        case 5:
+            if global_map % 2 == 0: return UP_LEFT
+            else: return DOWN_LEFT
+        case 6:
+            if global_map % 2 == 0: return UP_LEFT
+            else: return DOWN_LEFT
+
     return np.array([0 , 0])
 
 def get_x(strip):
@@ -67,36 +85,36 @@ def get_y(strip, global_map):
 
 def get_local_mapped(n, apv):
     match apv:
-        case 0:
-            if n % 2 == 0:
-                return even_func_apv8(n)
-            else:
-                return odd_func_apv8(n)
+        # case 0:
+        #     if n % 2 == 0:
+        #         return even_func_apv8(n)
+        #     else:
+        #         return odd_func_apv8(n)
         case 1:
             if n % 2 == 0:
                 return even_func_apv9(n)
             else:
                 return odd_func_apv9(n)
-        case 2:
-            if n % 2 == 0:
-                return even_func_apv8(n)
-            else:
-                return odd_func_apv8(n)
-        case 4:
-            if n % 2 == 0:
-                return even_func_apv12(n)
-            else:
-                return odd_func_apv12(n)
+        # case 2:
+        #     if n % 2 == 0:
+        #         return even_func_apv8(n)
+        #     else:
+        #         return odd_func_apv8(n)
+        # case 4:
+        #     if n % 2 == 0:
+        #         return even_func_apv12(n)
+        #     else:
+        #         return odd_func_apv12(n)
         case 5:
             if n % 2 == 0:
                 return even_func_apv13(n)
             else:
                 return odd_func_apv13(n)
-        case 6:
-            if n % 2 == 0:
-                return even_func_apv12(n)
-            else:
-                return odd_func_apv12(n)
+        # case 6:
+        #     if n % 2 == 0:
+        #         return even_func_apv12(n)
+        #     else:
+        #         return odd_func_apv12(n)
 
     return n
 
@@ -144,36 +162,34 @@ def accumulate_hits(valid, counts, total):
     # ordered pairs (i != k) are kept so the counts match the original script;
     # switching to `for k in range(i + 1, len(valid))` gives the same picture
     # at half the weight and half the work.
-    for i in range(len(valid)):
-        _, xa, ya, direction_a, peak_a = valid[i]
-        for k in range(len(valid)):
-            if i == k:
-                continue
-            _, xb, yb, direction_b, peak_b = valid[k]
+    valid_combinations = combinations(valid, 2)
+    for combination in valid_combinations:
+        _, xa, ya, direction_a, peak_a = combination[0]
+        _, xb, yb, direction_b, peak_b = combination[1]
 
-            D = np.array([
-                [direction_a[0], -direction_b[0]],
-                [direction_a[1], -direction_b[1]]
-            ])
-            p = np.array([xb - xa, yb - ya])
+        D = np.array([
+            [direction_a[0], -direction_b[0]],
+            [direction_a[1], -direction_b[1]]
+        ])
+        p = np.array([xb - xa, yb - ya])
 
-            try:
-                s_t = np.linalg.solve(D, p)
-            except np.linalg.LinAlgError:
-                continue
+        try:
+            s_t = np.linalg.solve(D, p)
+        except np.linalg.LinAlgError:
+            continue
 
-            l1 = np.array([xa, ya]) + s_t[0] * direction_a
-            l2 = np.array([xb, yb]) + s_t[1] * direction_b
-            assert np.allclose(l1, l2)
+        l1 = np.array([xa, ya]) + s_t[0] * direction_a
+        l2 = np.array([xb, yb]) + s_t[1] * direction_b
+        assert np.allclose(l1, l2)
 
-            if l1[0] < 0 or l1[0] >= 384 or l1[1] < 0 or l1[1] >= 384:
-                continue
+        if l1[0] < 0 or l1[0] >= 384 or l1[1] < 0 or l1[1] >= 384:
+            continue
 
-            adc = max(peak_a[get_center_of_mass(peak_a)], peak_b[get_center_of_mass(peak_b)])
-            
-            x, y = int(l1[0] * 2), int(l1[1] * 2)
-            counts[y, x] += 1
-            total[y, x] += adc
+        adc = max(peak_a[get_center_of_mass(peak_a)], peak_b[get_center_of_mass(peak_b)])
+        
+        x, y = int(l1[0] * 2), int(l1[1] * 2)
+        counts[y, x] += 1
+        total[y, x] += adc
     
 
 
@@ -216,7 +232,7 @@ def main():
     cmap = plt.get_cmap('viridis').copy()
     cmap.set_bad('#1a1a1a')
 
-    vmax = np.percentile(total[counts > 0], 97)
+    vmax = np.percentile(total[counts > 0], 96)
     plt.imshow(view, cmap=cmap, vmin=0, vmax=vmax,
                origin='lower', aspect='equal', interpolation='nearest')
     plt.colorbar(label='Accumulated ADC', extend='max')
